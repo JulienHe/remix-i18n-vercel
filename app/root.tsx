@@ -1,4 +1,9 @@
-import type { LinksFunction, MetaFunction } from "@remix-run/node";
+import type {
+  LinksFunction,
+  LoaderFunction,
+  MetaFunction,
+} from "@remix-run/node";
+import { json } from "@remix-run/node";
 import {
   Link,
   Links,
@@ -8,10 +13,37 @@ import {
   Scripts,
   ScrollRestoration,
   useCatch,
+  useLoaderData,
 } from "@remix-run/react";
+
+import { useChangeLanguage } from "remix-i18next";
+import { useTranslation } from "react-i18next";
+import i18next from "~/i18next.server";
+import { i18nCookie } from "./cookie";
 
 import darkStylesUrl from "~/styles/dark.css";
 import globalStylesUrl from "~/styles/global.css";
+
+type LoaderData = { locale: string; ENV: { API_URL: string | undefined } };
+
+export let loader: LoaderFunction = async ({ request }) => {
+  let locale = await i18next.getLocale(request);
+  return json<LoaderData>(
+    {
+      locale,
+      ENV: {
+        API_URL: process.env.API_URL,
+      },
+    },
+    {
+      headers: { "Set-Cookie": await i18nCookie.serialize(locale) },
+    }
+  );
+};
+
+export let handle = {
+  i18n: "common",
+};
 
 // https://remix.run/api/conventions#links
 export let links: LinksFunction = () => {
@@ -20,8 +52,8 @@ export let links: LinksFunction = () => {
     {
       rel: "stylesheet",
       href: darkStylesUrl,
-      media: "(prefers-color-scheme: dark)"
-    }
+      media: "(prefers-color-scheme: dark)",
+    },
   ];
 };
 
@@ -101,13 +133,17 @@ export function CatchBoundary() {
 
 function Document({
   children,
-  title
+  title,
 }: {
   children: React.ReactNode;
   title?: string;
 }) {
+  let { locale, ENV } = useLoaderData<LoaderData>();
+  let { i18n } = useTranslation();
+  useChangeLanguage(locale);
+
   return (
-    <html lang="en">
+    <html lang={i18n.language}>
       <head>
         {title ? <title>{title}</title> : null}
         <Meta />
@@ -116,6 +152,11 @@ function Document({
       <body>
         {children}
         <ScrollRestoration />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.ENV = ${JSON.stringify(ENV.API_URL)}`,
+          }}
+        />
         <Scripts />
         <LiveReload />
       </body>
